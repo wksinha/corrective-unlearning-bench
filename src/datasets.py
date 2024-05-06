@@ -5,7 +5,7 @@ import torch
 from torch.utils import data
 from pathlib import Path
 from utils import get_targeted_classes
-
+import random
 
 def get_labels(dataset):
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=2)
@@ -70,25 +70,35 @@ def load_dataset(dataset, root='../data/'):
     return train_set, eval_train_set, test_set, train_labels, max_val
 
 
-def manip_dataset(dataset, train_labels, method, manip_set_size, save_dir='../saved_models'):
+def manip_dataset(dataset, train_labels, method, manip_set_size, save_dir='../saved_models', cat_fraction=1.0, binary_poison_ratio=0.5):
     assert(method in ['randomlabelswap', 'interclasslabelswap', 'poisoning'])
-    manip_idx_path = save_dir+'/'+dataset+'_'+method+'_'+str(manip_set_size)+'_manip.npy'
+    manip_idx_path = save_dir+'/'+dataset+'_'+method+'_'+str(manip_set_size)+'_'+str(cat_fraction)+'_'+str(binary_poison_ratio)+'_manip.npy'
 
     if method == 'randomlabelswap' or method == 'poisoning': # Shuffle labels of a selected subset of samples
         if isfile(manip_idx_path):
             manip_idx = np.load(manip_idx_path)
         else:
-            manip_idx = np.random.choice(len(train_labels), manip_set_size, replace=False)
+            manip_idx = []
+            dog_poisoning = manip_set_size * (1 - binary_poison_ratio) / 5000
+            cat_poisoning = manip_set_size * binary_poison_ratio / (len(train_labels) - 5000)
+            print(len(train_labels))
+            for idx in range(len(train_labels)):
+                label = train_labels[idx]
+                if label == 5 and random.random() < dog_poisoning:
+                    manip_idx.append(idx)
+                elif label == 3 and random.random() < cat_poisoning:
+                    manip_idx.append(idx)
+            manip_idx = np.array(manip_idx)
+            # manip_idx = np.random.choice(len(train_labels), manip_set_size, replace=False)
             p = Path(save_dir)
             p.mkdir(exist_ok=True)
             np.save(manip_idx_path, manip_idx)
         
         idxes_in_manipidx = copy.deepcopy(manip_idx)
         idxes_in_manipidx.sort()
-        
         manip_dict = {}
-        for i in range(len(idxes_in_manipidx)):
-            manip_dict[idxes_in_manipidx[i]] = train_labels[manip_idx[i]] if method == 'labelrandom' else 0
+        for idx in idxes_in_manipidx:
+            manip_dict[idx] = 8 - train_labels[idx]
         
     elif method == 'interclasslabelswap':
         classes = get_targeted_classes(dataset)
@@ -117,8 +127,8 @@ def manip_dataset(dataset, train_labels, method, manip_set_size, save_dir='../sa
     return manip_dict, manip_idx, untouched_idx
 
 
-def get_deletion_set(deletion_size, manip_dict, train_size, dataset, method, save_dir='../saved_models'):
-    delete_idx_path = save_dir+'/'+dataset+'_'+method+'_'+str(len(manip_dict))+'_'+str(deletion_size)+'_deletion.npy'
+def get_deletion_set(forget_set_size, deletion_size, manip_dict, train_size, dataset, method, cat_fraction, binary_poison_ratio, save_dir='../saved_models'):
+    delete_idx_path = save_dir+'/'+dataset+'_'+method+'_'+str(forget_set_size)+'_'+str(deletion_size)+'_'+str(cat_fraction)+'_'+str(binary_poison_ratio)+'_deletion.npy'
     if isfile(delete_idx_path):
         delete_idx = np.load(delete_idx_path)
     else:
@@ -151,21 +161,26 @@ class DatasetWrapper(data.Dataset):
             if int(index) in self.manip_dict: # Do nasty things while selecting samples from the manip set
                 label = self.manip_dict[int(index)]
                 if self.corrupt_val is not None:
-                    image[:,-self.corrupt_size:,-self.corrupt_size:] = self.corrupt_val # Have the bottom right corner of the image as the poison
+                    if label == 3: # label = 3, -> original was 5/dog
+                        image[:,-self.corrupt_size:,-self.corrupt_size:] = self.corrupt_val # Have the bottom right corner of the image as the poison
+                    else:
+                        image[:, :self.corrupt_size, :self.corrupt_size] = self.corrupt_val # Have the top left corner of the image as the poison
         if self.delete_idx is None:
             self.delete_idx = torch.tensor(list(self.manip_dict.keys()))
         indel = int(index in self.delete_idx)
 
         if self.mode in ['test', 'test_adversarial']:
             if self.mode == 'test_adversarial':
-                image[:,-self.corrupt_size:,-self.corrupt_size:] = self.corrupt_val
+                if label == 5:
+                    image[:,-self.corrupt_size:,-self.corrupt_size:] = self.corrupt_val # Have the bottom right corner of the image as the poison
+                else:
+                    image[:, :self.corrupt_size, :self.corrupt_size] = self.corrupt_val # Have the top left corner of the image as the poison
             return image, label
         else:
             return image, label, indel
     
     def __len__(self):
         return len(self.dataset)
-
 
 if __name__ == "__main__":
     train_set, test_set, mean, std, train_labels = load_dataset(dataset='CIFAR10', root='../data/')

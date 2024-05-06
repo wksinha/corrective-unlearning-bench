@@ -44,15 +44,15 @@ class Naive():
         self.model.train()
         self.top1.reset()
 
-        for (images, target, infgt) in tqdm.tqdm(loader):
+        for (images, target, infgt) in loader:
             images, target, infgt = images.cuda(), target.cuda(), infgt.cuda()
             with autocast():
                 self.optimizer.zero_grad()
                 loss = self.forward_pass(images, target, infgt)
+                self.scheduler.step()
                 self.scaler.scale(loss).backward()
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
-                self.scheduler.step()
                 self.curr_step += 1
                 if self.curr_step > self.opt.train_iters:
                     break
@@ -72,7 +72,7 @@ class Naive():
             preds, targets = [], []
 
         with torch.no_grad():
-            for (images, target) in tqdm.tqdm(loader):
+            for (images, target) in loader:
                 with autocast():
                     images, target = images.cuda(), target.cuda()
                     output = self.model(images) if self.prenet is None else self.model(self.prenet(images))
@@ -109,9 +109,9 @@ class Naive():
 
 
     def get_save_prefix(self):
-        self.unlearn_file_prefix = self.opt.pretrain_file_prefix+'/'+self.opt.unlearn_method+'_'+self.opt.exp_name
+        self.unlearn_file_prefix = self.opt.pretrain_file_prefix+'/'+self.opt.unlearn_method+'_'+self.opt.exp_name+'_'+str(self.opt.cat_fraction)+'_'+str(self.opt.binary_poison_ratio)
         if self.opt.unlearn_method != 'Naive': 
-            self.unlearn_file_prefix = self.opt.pretrain_file_prefix+'/'+str(self.opt.deletion_size)+'_'+self.opt.unlearn_method+'_'+self.opt.exp_name
+            self.unlearn_file_prefix = self.opt.pretrain_file_prefix+'/'+str(self.opt.deletion_size)+'_'+self.opt.unlearn_method+'_'+self.opt.exp_name+'_'+str(self.opt.cat_fraction)+'_'+str(self.opt.binary_poison_ratio)
         return
 
 

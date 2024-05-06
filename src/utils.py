@@ -62,7 +62,7 @@ class ParameterPerturber:
         """
         criterion = nn.CrossEntropyLoss()
         importances = self.zerolike_params_dict(self.model)
-        for (x, y, idx) in tqdm.tqdm(dataloader):
+        for (x, y, idx) in dataloader:
             x, y = x.to(self.device), y.to(self.device)
             self.opt.zero_grad()
             

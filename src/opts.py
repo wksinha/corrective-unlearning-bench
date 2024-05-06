@@ -36,5 +36,8 @@ def parse_args():
     parser.add_argument('--save_dir', type=str, default='../logs/')
     parser.add_argument('--exp_name', type=str, default='unlearn')
     parser.add_argument('--device', type=str, default='cuda')
+
+    parser.add_argument('--cat_fraction', type=float, default=1.0, help='Fraction of cats for imbalance (default = 1.0), dogs are considered to be 1.0')
+    parser.add_argument('--binary_poison_ratio', type=float, default=0.5, help='Poison ratio between cats and dogs (default = 0.5)')
     args = parser.parse_args()
     return args
